@@ -38,7 +38,7 @@ var getErrorMessage = function(err) {
 exports.signup = function(req, res) {
 	// For security measurement we remove the roles from the req.body object
 	delete req.body.roles;
-	
+
 	// Init Variables
 	var user = new User(req.body);
 	var message = null;
@@ -140,45 +140,51 @@ exports.changePassword = function(req, res, next) {
 	var message = null;
 
 	if (req.user) {
-		User.findById(req.user.id, function(err, user) {
-			if (!err && user) {
-				if (user.authenticate(passwordDetails.currentPassword)) {
-					if (passwordDetails.newPassword === passwordDetails.verifyPassword) {
-						user.password = passwordDetails.newPassword;
+		if (passwordDetails.newPassword) {
+			User.findById(req.user.id, function(err, user) {
+				if (!err && user) {
+					if (user.authenticate(passwordDetails.currentPassword)) {
+						if (passwordDetails.newPassword === passwordDetails.verifyPassword) {
+							user.password = passwordDetails.newPassword;
 
-						user.save(function(err) {
-							if (err) {
-								return res.send(400, {
-									message: getErrorMessage(err)
-								});
-							} else {
-								req.login(user, function(err) {
-									if (err) {
-										res.send(400, err);
-									} else {
-										res.send({
-											message: 'Password changed successfully'
-										});
-									}
-								});
-							}
-						});
+							user.save(function(err) {
+								if (err) {
+									return res.send(400, {
+										message: getErrorMessage(err)
+									});
+								} else {
+									req.login(user, function(err) {
+										if (err) {
+											res.send(400, err);
+										} else {
+											res.send({
+												message: 'Password changed successfully'
+											});
+										}
+									});
+								}
+							});
+						} else {
+							res.send(400, {
+								message: 'Passwords do not match'
+							});
+						}
 					} else {
 						res.send(400, {
-							message: 'Passwords do not match'
+							message: 'Current password is incorrect'
 						});
 					}
 				} else {
 					res.send(400, {
-						message: 'Current password is incorrect'
+						message: 'User is not found'
 					});
 				}
-			} else {
-				res.send(400, {
-					message: 'User is not found'
-				});
-			}
-		});
+			});
+		} else {
+			res.send(400, {
+				message: 'Please provide a new password'
+			});
+		}
 	} else {
 		res.send(400, {
 			message: 'User is not signed in'
@@ -320,28 +326,24 @@ exports.saveOAuthUserProfile = function(req, providerUserProfile, done) {
 		});
 	} else {
 		// User is already logged in, join the provider data to the existing user
-		User.findById(req.user.id, function(err, user) {
-			if (err) {
-				return done(err);
-			} else {
-				// Check if user exists, is not signed in using this provider, and doesn't have that provider data already configured
-				if (user && user.provider !== providerUserProfile.provider && (!user.additionalProvidersData || !user.additionalProvidersData[providerUserProfile.provider])) {
-					// Add the provider data to the additional provider data field
-					if (!user.additionalProvidersData) user.additionalProvidersData = {};
-					user.additionalProvidersData[providerUserProfile.provider] = providerUserProfile.providerData;
+		var user = req.user;
 
-					// Then tell mongoose that we've updated the additionalProvidersData field
-					user.markModified('additionalProvidersData');
+		// Check if user exists, is not signed in using this provider, and doesn't have that provider data already configured
+		if (user.provider !== providerUserProfile.provider && (!user.additionalProvidersData || !user.additionalProvidersData[providerUserProfile.provider])) {
+			// Add the provider data to the additional provider data field
+			if (!user.additionalProvidersData) user.additionalProvidersData = {};
+			user.additionalProvidersData[providerUserProfile.provider] = providerUserProfile.providerData;
 
-					// And save the user
-					user.save(function(err) {
-						return done(err, user, '/#!/settings/accounts');
-					});
-				} else {
-					return done(err, user);
-				}
-			}
-		});
+			// Then tell mongoose that we've updated the additionalProvidersData field
+			user.markModified('additionalProvidersData');
+
+			// And save the user
+			user.save(function(err) {
+				return done(err, user, '/#!/settings/accounts');
+			});
+		} else {
+			return done(new Error('User is already connected using this provider'), user);
+		}
 	}
 };
 
